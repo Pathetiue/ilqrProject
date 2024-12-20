@@ -1,4 +1,6 @@
 import numpy as np
+np.seterr(all="raise")
+np.set_printoptions(precision=3)
 from casadi import *
 import control # conda install -c conda-forge control slycot
 import matplotlib.pyplot as plt
@@ -53,12 +55,21 @@ def cost_xx(x):
 
 def cost_u(u):
     # Ju = Ru
-    J = R @ u
+    J =  R @ u
     return J
 
 def cost_uu(u):
     # Juu = R
     return R
+
+def wrap_angle(angle):
+    if angle > np.pi:
+        angle = angle % (2 * np.pi)
+        # angle -= 2 * np.pi
+    if angle < -np.pi:
+        angle = angle % (-2 * np.pi)
+        # angle += 2 * np.pi
+    return angle
 
 def ilqr(x, u, iterations):
     """
@@ -68,80 +79,108 @@ def ilqr(x, u, iterations):
     min_du = 1e-3
     min_dJ = 1e-4
     min_dx = 1e-4
-
-    back_track = 1
+    back_track_base = 1
+    back_track = back_track_base
 
     prev_cost = np.inf
     smallest_cost = np.inf
 
-    for i in range(iterations):
+    itr = 0
+    back_itr = 0
+    tried_reverse_search = False
+    tried_double = False
+    while itr < iterations:
         # Backward pass
         Vx = np.zeros((4, N))
         Vxx = np.zeros((4, 4, N))
-        Vx[:, -1] = cost_x(x[:, -1]).reshape(4) * 5
+        # print("last state: {}".format(x[:, -1]))
+        Vx[:, -1] = Qf @ x[:, -1]
         # print(Vx[:, -1])
-        Vxx[:, :, -1] = cost_xx(x[:, -1])
+        Vxx[:, :, -1] = Qf
 
         du = np.zeros((1, N))
 
         for k in range(N-2, -1, -1):
-            # if x[:, k][0] > np.pi:
-            #     x[:, k][0] = x[:, k][0] - 2 * np.pi
-            # elif x[:, k][0] < -np.pi:
-            #     x[:, k][0] = x[:, k][0] + 2 * np.pi
+            x[:, k][0] = wrap_angle(x[:, k][0])
 
             # Compute Q function
-            fu = substitute([B], [theta, w, p, v, F], x[:, k].flatten().tolist() + u[:, k].tolist())[0]
-            fu = cas2arr(fu)
             fx = substitute([A], [theta, w, p, v, F], x[:, k].flatten().tolist() + u[:, k].tolist())[0]
             fx = cas2arr(fx)
-            
+            fu = substitute([B], [theta, w, p, v, F], x[:, k].flatten().tolist() + u[:, k].tolist())[0]
+            fu = cas2arr(fu)
+
             Qx = cost_x(x[:, k]) + fx.T @ Vx[:, k+1]
             Qu = cost_u(u[:, k]) + fu.T @ Vx[:, k+1]
+            # Qx = cost_x(x[:, k]) + (fx.T @ Vx[:, k+1]).T
+            # Qu = cost_u(u[:, k]) + (fu.T @ Vx[:, k+1]).T
             Qxx = cost_xx(x[:, k]) + fx.T @ Vxx[:, :, k+1] @ fx
-            Quu = cost_uu(u[:, k]) + fu.T @ Vxx[:, :, k+1] @ fu
+            Quu = cost_uu(u[:, k]) + fu.T @ Vxx[:, :, k+1] @ fu + 0.01 * np.eye(fu.shape[1])
             Qux = fu.T @ Vxx[:, :, k+1] @ fx
 
             kt = -np.linalg.inv(Quu) @ Qu
             Kt = -np.linalg.inv(Quu) @ Qux
 
-            du[:, k] = back_track * kt + Kt @ x[:, k]
+            du[:, k] = kt + Kt @ x[:, k]
             Vx[:, k] = Qx - Kt.T @ Quu @ kt
             Vxx[:, :, k] = Qxx - Kt.T @ Quu @ Kt
 
-            # du[:, k] = back_track * kt
-            # Vx[:, k] = Qx + Quu @ du[:, k]
-            # Vxx[:, :, k] = Qxx
-
-        if np.max(np.abs(du)) < min_du:
-            print("Converged at iteration {}, with max du: {}".format(i, np.max(np.abs(du))))
-            break
+        # if np.max(np.abs(du)) < min_du:
+        #     print("Converged at iteration {}, with max du: {}".format(i, np.max(np.abs(du))))
+        #     break
 
         x_new = np.zeros((4, N))
         u_new = np.zeros((1, N))
-        x_new[:, 0] = np.array([np.pi, 0, 0, 0]).reshape(4)
+        x_new[:, 0] = x[:, 0].reshape(4)
 
         # Forward pass
         for k in range(N-1):
-            u_new[:, k] = u[:, k] + du[:, k]
-            x_new[:, k+1] = cart_pole_model(x[:, k].flatten().tolist(), [u[:, k]]).reshape(4)
+            u_new[:, k] = u[:, k] + back_track * du[:, k]
+            u_new[:, k] = np.clip(u_new[:, k], -15, 15)
+
+            x_new[:, k+1] = cart_pole_model(x_new[:, k].flatten().tolist(), u_new[:, k].tolist()).reshape(4)
+            # print("x: {}, u: {}, du: {}".format(x_new[:, k+1], u[:, k], du[:, k]))
+            x_new[:, k+1][0] = wrap_angle(x_new[:, k+1][0])
             # x_new[:, k+1] = state_space(x[:, k].flatten().tolist(), [u[:, k]]).reshape(4)
             pass
 
-        new_cost = np.sum([cost_function(x_new[:, k], u_new[:, k]) for k in range(N)])
-        if new_cost < smallest_cost:
-            smallest_cost = new_cost
-            opt_x = x_new
-            opt_u = u_new
+        new_cost = np.sum([cost_function(x_new[:, k], u_new[:, k]) for k in range(N-1)])
+        new_cost += x_new[:, -1].T @ Qf @ x_new[:, -1]
+        if new_cost < prev_cost:
+            if new_cost < smallest_cost:
+                smallest_cost = new_cost
+                opt_x = x_new
+                opt_u = u_new
 
-        x = x_new
-        u = u_new
+            x = x_new
+            u = u_new
+            d_cost = new_cost - prev_cost
+            prev_cost = new_cost
+            print("iteration : {},\tcost : {},\tchange in cost: {},\tlast state: {}".format(itr, round(new_cost, 4), round(d_cost, 4), x[:, -1]))
+            if d_cost < 1e-2:
+                print("Converged at iteration {}, last state: {}".format(itr, x[:, -1]))
+                break
+            back_track = back_track_base
+            itr += 1
+            back_itr = 0
+            tried_reverse_search = False
+            tried_double = False
+        else:
+            back_track *= 0.8
+            back_itr += 1
+            if abs(back_track) < 1e-8:
+                if not tried_reverse_search:
+                    back_track = -3
+                    tried_reverse_search = True
+                elif not tried_double:
+                    back_track = 3
+                    tried_double = True
+                else:
+                    print("Converged at iteration {}, last state: {}".format(itr, x_new[:, -1]))
+                    return x_new, u_new
+
+            print("iteration : {}, Cost increased, prev: {}, new: {}, update backtrack term: {}".format(itr, round(prev_cost,4), round(new_cost,4), back_track))
         
-        print("iteration : {}, cost : {}, change in cost: {}".format(i, new_cost, new_cost - prev_cost))
-        prev_cost = new_cost
-        back_track = max(back_track - back_track / iterations, 1e-3)
-
-    return opt_x, opt_u
+    # return opt_x, opt_u
     return x, u
 
 if __name__ == "__main__":
@@ -181,11 +220,18 @@ if __name__ == "__main__":
     x1[2,0] = p1
     x1[3,0] = v1
 
+    partial_alp_theta = jacobian(alpha, theta)
+    partial_alp_w = jacobian(alpha, w)
+    partial_acc_theta = jacobian(acc, theta)
+    partial_acc_w = jacobian(acc, w)
+
     A = jacobian(x1, x)
     B = jacobian(x1, F)
 
-    Q = np.diag([1, 0.1, 1e-9, 1e-9])
-    R = np.diag([0.01])
+    Q = np.diag([1, 0.1, 1e-4, 0.01])
+    R = np.diag([0.1])
+    # Qf = np.diag([100, 10, 10, 10])
+    Qf = Q
 
     ref = np.zeros((4,1))
 
@@ -200,14 +246,17 @@ if __name__ == "__main__":
     x_traj = np.zeros((4, N))
     x_traj[:,0] = state.reshape(4)
     u = np.zeros((1, N))
+    At = substitute([A], [theta, w, p, v], state_list)
 
     for i in range(1, N):
+        # u[0, i] = np.random.normal(0, 1)
         x_traj[:, i] = cart_pole_model(x_traj[:,i-1].flatten().tolist(), [u[0, i-1]]).reshape(4)
 
-    x_traj, u = ilqr(x_traj, u, 30)
+    x_res, u = ilqr(x_traj, u, 50)
 
     fig, ax = plt.subplots(2, 1)
 
+    ax[0].plot(tspan, x_res[0,:], label="theta_res")
     ax[0].plot(tspan, x_traj[0,:], label="theta")
     ax[1].plot(tspan, u[0,:], label="F")
     ax[0].legend()
