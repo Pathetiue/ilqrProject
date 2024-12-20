@@ -88,7 +88,6 @@ def ilqr(x, u, iterations):
     itr = 0
     back_itr = 0
     tried_reverse_search = False
-    tried_double = False
     while itr < iterations:
         # Backward pass
         Vx = np.zeros((4, N))
@@ -114,7 +113,7 @@ def ilqr(x, u, iterations):
             # Qx = cost_x(x[:, k]) + (fx.T @ Vx[:, k+1]).T
             # Qu = cost_u(u[:, k]) + (fu.T @ Vx[:, k+1]).T
             Qxx = cost_xx(x[:, k]) + fx.T @ Vxx[:, :, k+1] @ fx
-            Quu = cost_uu(u[:, k]) + fu.T @ Vxx[:, :, k+1] @ fu + 0.01 * np.eye(fu.shape[1])
+            Quu = cost_uu(u[:, k]) + fu.T @ Vxx[:, :, k+1] @ fu + 1e-3 * np.eye(fu.shape[1])
             Qux = fu.T @ Vxx[:, :, k+1] @ fx
 
             kt = -np.linalg.inv(Quu) @ Qu
@@ -144,7 +143,9 @@ def ilqr(x, u, iterations):
             pass
 
         new_cost = np.sum([cost_function(x_new[:, k], u_new[:, k]) for k in range(N-1)])
-        new_cost += x_new[:, -1].T @ Qf @ x_new[:, -1]
+        last_cost = x_new[:, -1].T @ Qf @ x_new[:, -1]
+        new_cost += last_cost
+        
         if new_cost < prev_cost:
             if new_cost < smallest_cost:
                 smallest_cost = new_cost
@@ -156,24 +157,20 @@ def ilqr(x, u, iterations):
             d_cost = new_cost - prev_cost
             prev_cost = new_cost
             print("iteration : {},\tcost : {},\tchange in cost: {},\tlast state: {}".format(itr, round(new_cost, 4), round(d_cost, 4), x[:, -1]))
-            if d_cost < 1e-2:
+            if -d_cost < 1e-3 and itr >= 5:
                 print("Converged at iteration {}, last state: {}".format(itr, x[:, -1]))
                 break
             back_track = back_track_base
             itr += 1
             back_itr = 0
             tried_reverse_search = False
-            tried_double = False
         else:
             back_track *= 0.8
             back_itr += 1
             if abs(back_track) < 1e-8:
                 if not tried_reverse_search:
-                    back_track = -3
+                    back_track = -back_track_base
                     tried_reverse_search = True
-                elif not tried_double:
-                    back_track = 3
-                    tried_double = True
                 else:
                     print("Converged at iteration {}, last state: {}".format(itr, x_new[:, -1]))
                     return x_new, u_new
@@ -228,17 +225,26 @@ if __name__ == "__main__":
     A = jacobian(x1, x)
     B = jacobian(x1, F)
 
-    Q = np.diag([1, 0.1, 1e-4, 0.01])
-    R = np.diag([0.1])
-    # Qf = np.diag([100, 10, 10, 10])
-    Qf = Q
+    Q_theta = 1 / (np.deg2rad(5)**2)
+    Q_w = 1 / (np.deg2rad(10)**2)
+    Q_p = 1 / (2**2)
+    Q_v = 1 / (0.5**2)
+    R_F = 1 / (1**2)
+    Q = np.diag([Q_theta, Q_w, Q_p, Q_v]) / Q_theta
+    R = np.diag([R_F]) / Q_theta
+    Qf = Q * 20
+
+    # Q = np.diag([1, 0.1, 0.1, 0.01])
+    # R = np.diag([0.1])
+    # Qf = np.diag([10, 10, 1, 10])
+    # Qf = Q
 
     ref = np.zeros((4,1))
 
     state = np.array([np.pi, 0, 0, 0]).reshape(4,1)
     state_list = state.flatten().tolist()
 
-    sim_time = 10
+    sim_time = 20
     N = int(sim_time / h) + 1
     tspan = [i * h for i in range(N)]
 
@@ -249,10 +255,10 @@ if __name__ == "__main__":
     At = substitute([A], [theta, w, p, v], state_list)
 
     for i in range(1, N):
-        # u[0, i] = np.random.normal(0, 1)
+        u[0, i] = np.random.normal(0, 0.1)
         x_traj[:, i] = cart_pole_model(x_traj[:,i-1].flatten().tolist(), [u[0, i-1]]).reshape(4)
 
-    x_res, u = ilqr(x_traj, u, 50)
+    x_res, u = ilqr(x_traj, u, 40)
 
     fig, ax = plt.subplots(2, 1)
 
