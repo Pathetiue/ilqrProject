@@ -65,20 +65,19 @@ def cost_uu(u):
 def wrap_angle(angle):
     if angle > np.pi:
         angle = angle % (2 * np.pi)
-        # angle -= 2 * np.pi
+        angle -= 2 * np.pi
     if angle < -np.pi:
         angle = angle % (-2 * np.pi)
-        # angle += 2 * np.pi
+        angle += 2 * np.pi
     return angle
 
-def ilqr(x, u, iterations):
+def ilqr(x_in, u_in, iterations):
     """
     x: 4 * N
     u: 1 * N
     """
-    min_du = 1e-3
-    min_dJ = 1e-4
-    min_dx = 1e-4
+    x_traj = x_in.copy()
+    u_traj = u_in.copy()
     back_track_base = 1
     back_track = back_track_base
 
@@ -92,49 +91,49 @@ def ilqr(x, u, iterations):
         # Backward pass
         Vx = np.zeros((4, N))
         Vxx = np.zeros((4, 4, N))
-        Vx[:, -1] = Qf @ x[:, -1]
+        Vx[:, -1] = Qf @ x_traj[:, -1]
         Vxx[:, :, -1] = Qf
 
         du = np.zeros((1, N))
-        kts = []
-        Kts = []
+        kts = [None] * N
+        Kts = [None] * N
 
         for k in range(N-2, -1, -1):
-            x[:, k][0] = wrap_angle(x[:, k][0])
+            x_traj[:, k][0] = wrap_angle(x_traj[:, k][0])
 
             # Compute Q function
-            fx = substitute([A], [theta, w, p, v, F], x[:, k].flatten().tolist() + u[:, k].tolist())[0]
+            fx = substitute([A], [theta, w, p, v, F], x_traj[:, k].flatten().tolist() + u_traj[:, k].tolist())[0]
             fx = cas2arr(fx)
-            fu = substitute([B], [theta, w, p, v, F], x[:, k].flatten().tolist() + u[:, k].tolist())[0]
+            fu = substitute([B], [theta, w, p, v, F], x_traj[:, k].flatten().tolist() + u_traj[:, k].tolist())[0]
             fu = cas2arr(fu)
 
-            Qx = cost_x(x[:, k]) + fx.T @ Vx[:, k+1]
-            Qu = cost_u(u[:, k]) + fu.T @ Vx[:, k+1]
-            Qx = cost_x(x[:, k]) + (fx.T @ Vx[:, k+1]).T
-            Qu = cost_u(u[:, k]) + (fu.T @ Vx[:, k+1]).T
-            Qxx = cost_xx(x[:, k]) + fx.T @ Vxx[:, :, k+1] @ fx
-            Quu = cost_uu(u[:, k]) + fu.T @ Vxx[:, :, k+1] @ fu
+            Qx = cost_x(x_traj[:, k]) + fx.T @ Vx[:, k+1]
+            Qu = cost_u(u_traj[:, k]) + fu.T @ Vx[:, k+1]
+            Qx = cost_x(x_traj[:, k]) + (fx.T @ Vx[:, k+1]).T
+            Qu = cost_u(u_traj[:, k]) + (fu.T @ Vx[:, k+1]).T
+            Qxx = cost_xx(x_traj[:, k]) + fx.T @ Vxx[:, :, k+1] @ fx
+            Quu = cost_uu(u_traj[:, k]) + fu.T @ Vxx[:, :, k+1] @ fu
             Qux = fu.T @ Vxx[:, :, k+1] @ fx
 
             kt = -np.linalg.inv(Quu) @ Qu
             Kt = -np.linalg.inv(Quu) @ Qux
 
-            kts.append(kt)
-            Kts.append(Kt)
+            kts[k] = kt
+            Kts[k] = Kt
 
-            du[:, k] = kt + Kt @ x[:, k]
+            du[:, k] = kt + Kt @ x_traj[:, k]
             Vx[:, k] = Qx - Kt.T @ Quu @ kt
             Vxx[:, :, k] = Qxx - Kt.T @ Quu @ Kt
 
         x_new = np.zeros((4, N))
         u_new = np.zeros((1, N))
-        x_new[:, 0] = x[:, 0].reshape(4)
+        x_new[:, 0] = x_traj[:, 0].reshape(4)
 
         # Forward pass
         for k in range(N-1):
-            du = kts[k] + Kts[k] @ x_new[:, k]
-            u_new[:, k] = u[:, k] + back_track * du
-            u_new[:, k] = np.clip(u_new[:, k], -15, 15)
+            du = back_track * kts[k] + Kts[k] @ x_new[:, k]
+            u_new[:, k] = u_traj[:, k] + du
+            # u_new[:, k] = np.clip(u_new[:, k], -100, 100)
 
             x_new[:, k+1] = cart_pole_model(x_new[:, k].flatten().tolist(), u_new[:, k].tolist()).reshape(4)
             x_new[:, k+1][0] = wrap_angle(x_new[:, k+1][0])
@@ -148,28 +147,28 @@ def ilqr(x, u, iterations):
             if new_cost < smallest_cost:
                 smallest_cost = new_cost
 
-            x = x_new
-            u = u_new
+            x_traj = x_new
+            u_traj = u_new
             d_cost = new_cost - prev_cost
             prev_cost = new_cost
             
             back_track = back_track_base
 
-            print("iteration : {},\tcost : {},\tchange in cost: {},\tlast state: {}".format(itr, round(new_cost, 4), round(d_cost, 4), x[:, -1]))
-            if -d_cost < 1e-3 and itr >= 5:
-                print("Converged at iteration {}, last state: {}".format(itr, x[:, -1]))
+            print("iteration : {},\tcost : {},\tchange in cost: {},\tlast state: {}".format(itr, round(new_cost, 4), round(d_cost, 4), x_traj[:, -1]))
+            if -d_cost < 1e-6 and itr >= 3:
+                print("Converged at iteration {}, last state: {}".format(itr, x_traj[:, -1]))
                 break
             itr += 1
         else:
-            back_track *= 0.8
-            if abs(back_track) < 1e-8:
+            back_track *= 0.6
+            if abs(back_track) < 1e-6:
                 print("Converged at iteration {}, last state: {}".format(itr, x_new[:, -1]))
-                return x_new, u_new
+                return x_traj, u_traj, kts, Kts, back_track
 
-            print("iteration : {}, Cost increased, prev: {}, new: {}, update backtrack term: {}".format(itr, round(prev_cost,4), round(new_cost,4), back_track))
+            # print("iteration : {}, Cost increased, prev: {}, new: {}, update backtrack term: {}".format(itr, round(prev_cost,4), round(new_cost,4), back_track))
         
     # return opt_x, opt_u
-    return x, u
+    return x_traj, u_traj, kts, Kts, back_track
 
 if __name__ == "__main__":
     g = 9.8   # Gravity
@@ -220,42 +219,69 @@ if __name__ == "__main__":
     # Q_w = 1 / (np.deg2rad(10)**2)
     # Q_p = 1 / (2**2)
     # Q_v = 1 / (0.5**2)
-    # R_F = 1 / (1**2)
+    # R_F = 1 / (0.001**2)
     # Q = np.diag([Q_theta, Q_w, Q_p, Q_v]) / Q_theta
     # R = np.diag([R_F]) / Q_theta
-    # Qf = Q * 20
+    # Qf = Q * 5
 
-    Q = np.diag([1, 0.1, 0.1, 0.01])
-    R = np.diag([0.01])
-    Qf = np.diag([10, 10, 1, 10])
-    # Qf = Q * 10
+    Q = np.diag([10, 0.1, 0.01, 0.1])
+    R = np.diag([0.04])
+    # Qf = np.diag([10, 10, 1, 10])
+    Qf = Q * 2
 
     ref = np.zeros((4,1))
 
-    state = np.array([np.pi, 0, 0, 0]).reshape(4,1)
-    state_list = state.flatten().tolist()
+    init_state = np.array([np.pi, 0, 0, 0]).reshape(4,1)
+    state_list = init_state.flatten().tolist()
 
-    sim_time = 15
-    N = int(sim_time / h) + 1
-    tspan = [i * h for i in range(N)]
+    pred_horiz = 1
+    N = int(pred_horiz / h) + 1
 
     # Make initial trajectory
     x_traj = np.zeros((4, N))
-    x_traj[:,0] = state.reshape(4)
-    u = np.zeros((1, N))
+    x_traj[:,0] = init_state.reshape(4)
+    u_traj = np.zeros((1, N))
     At = substitute([A], [theta, w, p, v], state_list)
 
     for i in range(1, N):
-        # u[0, i] = np.random.normal(0, 0.1)
-        x_traj[:, i] = cart_pole_model(x_traj[:,i-1].flatten().tolist(), [u[0, i-1]]).reshape(4)
+        # u[0, i] = np.random.normal(0, 1)
+        x_traj[:, i] = cart_pole_model(x_traj[:,i-1].flatten().tolist(), [u_traj[0, i-1]]).reshape(4)
 
-    x_res, u = ilqr(x_traj, u, 40)
+    sim_time = 10
+    n_sim_step = int((sim_time / h) + 1)
+    tspan = np.linspace(0, sim_time, n_sim_step)
+
+    x_res = np.zeros((4, n_sim_step))
+    x_res[:,0] = init_state.reshape(4)
+    u_res = np.zeros((1, n_sim_step))
+    for ts in range(n_sim_step-1):
+        print("sim step: {} / {}".format(ts, n_sim_step-2))
+        # Solve optimal control
+        _, u_ilqr, kts, Kts, back_track = ilqr(x_traj, u_traj, 10)
+        du = back_track * kts[0] + Kts[0] @ x_res[:, ts]
+        print("gain k: {}, K: {}, backtrack: {}".format(kts[0], Kts[0], back_track))
+        u_ctrl = (u_traj[:,0] + du)[0]
+        u_ctrl = np.clip(u_ctrl, -50, 50)
+        u_res[:,ts] = u_ctrl
+        # Forward dynamics
+        x_res[:, ts+1] = cart_pole_model(x_res[:,ts].flatten().tolist(), [u_ctrl]).reshape(4)
+        x_res[0, ts+1] = wrap_angle(x_res[0,ts+1])
+        print("next state: {}, control: {}".format(x_res[:,ts+1], round(u_ctrl, 4)))
+        # Reset initial trajectory
+        x_traj = np.zeros((4, N))
+        x_traj[:,0] = x_res[:,ts+1].reshape(4)
+        # Reset initial control
+        u_traj = np.zeros((1, N))
+        for i in range(1, N):
+            # u_traj[0, i-1] = (kts[i-1] + Kts[i-1] @ x_traj[:,i-1])[0]
+            u_traj[0, i-1] = np.random.normal(0, 0.1)
+            x_traj[:, i] = cart_pole_model(x_traj[:,i-1].flatten().tolist(), [u_traj[0, i-1]]).reshape(4)
+        
 
     fig, ax = plt.subplots(2, 1)
 
-    ax[0].plot(tspan, x_res[0,:], label="theta_res")
-    ax[0].plot(tspan, x_traj[0,:], label="theta")
-    ax[1].plot(tspan, u[0,:], label="F")
+    ax[0].plot(tspan, x_res[0,:], label="theta")
+    ax[1].plot(tspan, u_res[0,:], label="F")
     ax[0].legend()
     ax[1].legend()
     plt.show()
