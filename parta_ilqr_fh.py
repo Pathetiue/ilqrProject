@@ -215,19 +215,19 @@ if __name__ == "__main__":
     A = jacobian(x1, x)
     B = jacobian(x1, F)
 
-    # Q_theta = 1 / (np.deg2rad(5)**2)
-    # Q_w = 1 / (np.deg2rad(10)**2)
-    # Q_p = 1 / (2**2)
-    # Q_v = 1 / (0.5**2)
-    # R_F = 1 / (0.001**2)
-    # Q = np.diag([Q_theta, Q_w, Q_p, Q_v]) / Q_theta
-    # R = np.diag([R_F]) / Q_theta
-    # Qf = Q * 5
+    Q_theta = 1 / (np.deg2rad(5)**2)
+    Q_w = 1 / (np.deg2rad(10)**2)
+    Q_p = 1 / (2**2)
+    Q_v = 1 / (0.5**2)
+    R_F = 1 / (1**2)
+    Q = np.diag([Q_theta, Q_w, Q_p, Q_v]) / Q_theta
+    R = np.diag([R_F]) / Q_theta
+    Qf = np.diag([Q_theta * 2, Q_w * 5, Q_p, Q_v * 10]) / Q_theta
 
-    Q = np.diag([10, 0.1, 0.01, 0.1])
-    R = np.diag([0.04])
-    # Qf = np.diag([10, 10, 1, 10])
-    Qf = Q * 2
+    # Q = np.diag([10, 0.1, 0.01, 0.1])
+    # R = np.diag([0.04])
+    # # Qf = np.diag([10, 10, 1, 10])
+    # Qf = Q * 2
 
     ref = np.zeros((4,1))
 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
         # u[0, i] = np.random.normal(0, 1)
         x_traj[:, i] = cart_pole_model(x_traj[:,i-1].flatten().tolist(), [u_traj[0, i-1]]).reshape(4)
 
-    sim_time = 10
+    sim_time = 20
     n_sim_step = int((sim_time / h) + 1)
     tspan = np.linspace(0, sim_time, n_sim_step)
 

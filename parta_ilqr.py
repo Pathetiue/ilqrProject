@@ -65,10 +65,10 @@ def cost_uu(u):
 def wrap_angle(angle):
     if angle > np.pi:
         angle = angle % (2 * np.pi)
-        # angle -= 2 * np.pi
+        angle -= 2 * np.pi
     if angle < -np.pi:
         angle = angle % (-2 * np.pi)
-        # angle += 2 * np.pi
+        angle += 2 * np.pi
     return angle
 
 def ilqr(x, u, iterations):
@@ -96,8 +96,8 @@ def ilqr(x, u, iterations):
         Vxx[:, :, -1] = Qf
 
         du = np.zeros((1, N))
-        kts = []
-        Kts = []
+        kts = [None] * N
+        Kts = [None] * N
 
         for k in range(N-2, -1, -1):
             x[:, k][0] = wrap_angle(x[:, k][0])
@@ -113,14 +113,14 @@ def ilqr(x, u, iterations):
             Qx = cost_x(x[:, k]) + (fx.T @ Vx[:, k+1]).T
             Qu = cost_u(u[:, k]) + (fu.T @ Vx[:, k+1]).T
             Qxx = cost_xx(x[:, k]) + fx.T @ Vxx[:, :, k+1] @ fx
-            Quu = cost_uu(u[:, k]) + fu.T @ Vxx[:, :, k+1] @ fu
+            Quu = cost_uu(u[:, k]) + fu.T @ Vxx[:, :, k+1] @ fu + np.eye(fu.shape[1]) * 0.1
             Qux = fu.T @ Vxx[:, :, k+1] @ fx
 
             kt = -np.linalg.inv(Quu) @ Qu
             Kt = -np.linalg.inv(Quu) @ Qux
 
-            kts.append(kt)
-            Kts.append(Kt)
+            kts[k] = kt
+            Kts[k] = Kt
 
             du[:, k] = kt + Kt @ x[:, k]
             Vx[:, k] = Qx - Kt.T @ Quu @ kt
@@ -132,9 +132,9 @@ def ilqr(x, u, iterations):
 
         # Forward pass
         for k in range(N-1):
-            du = kts[k] + Kts[k] @ x_new[:, k]
-            u_new[:, k] = u[:, k] + back_track * du
-            u_new[:, k] = np.clip(u_new[:, k], -15, 15)
+            du = back_track * kts[k] + Kts[k] @ x_new[:, k]
+            u_new[:, k] = u[:, k] + du
+            u_new[:, k] = np.clip(u_new[:, k], -50, 50)
 
             x_new[:, k+1] = cart_pole_model(x_new[:, k].flatten().tolist(), u_new[:, k].tolist()).reshape(4)
             x_new[:, k+1][0] = wrap_angle(x_new[:, k+1][0])
@@ -161,7 +161,7 @@ def ilqr(x, u, iterations):
                 break
             itr += 1
         else:
-            back_track *= 0.8
+            back_track *= 0.6
             if abs(back_track) < 1e-8:
                 print("Converged at iteration {}, last state: {}".format(itr, x_new[:, -1]))
                 return x_new, u_new
@@ -216,19 +216,19 @@ if __name__ == "__main__":
     A = jacobian(x1, x)
     B = jacobian(x1, F)
 
-    # Q_theta = 1 / (np.deg2rad(5)**2)
-    # Q_w = 1 / (np.deg2rad(10)**2)
-    # Q_p = 1 / (2**2)
-    # Q_v = 1 / (0.5**2)
-    # R_F = 1 / (1**2)
-    # Q = np.diag([Q_theta, Q_w, Q_p, Q_v]) / Q_theta
-    # R = np.diag([R_F]) / Q_theta
-    # Qf = Q * 20
+    Q_theta = 1 / (np.deg2rad(5)**2)
+    Q_w = 1 / (np.deg2rad(10)**2)
+    Q_p = 1 / (2**2)
+    Q_v = 1 / (0.5**2)
+    R_F = 1 / (1**2)
+    Q = np.diag([Q_theta, Q_w, Q_p, Q_v]) / Q_theta
+    R = np.diag([R_F]) / Q_theta
+    Qf = Q * 20
 
-    Q = np.diag([1, 0.1, 0.1, 0.01])
-    R = np.diag([0.01])
-    Qf = np.diag([10, 10, 1, 10])
-    # Qf = Q * 10
+    # Q = np.diag([1, 1, 0.01, 1])
+    # R = np.diag([0.02])
+    # Qf = np.diag([10, 10, 1, 10])
+    # Qf = Q * 5
 
     ref = np.zeros((4,1))
 
@@ -254,7 +254,7 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(2, 1)
 
     ax[0].plot(tspan, x_res[0,:], label="theta_res")
-    ax[0].plot(tspan, x_traj[0,:], label="theta")
+    # ax[0].plot(tspan, x_traj[0,:], label="theta")
     ax[1].plot(tspan, u[0,:], label="F")
     ax[0].legend()
     ax[1].legend()
