@@ -154,15 +154,15 @@ def ilqr(x_in, u_in, iterations):
             
             back_track = back_track_base
 
-            print("iteration : {},\tcost : {},\tchange in cost: {},\tlast state: {}".format(itr, round(new_cost, 4), round(d_cost, 4), x_traj[:, -1]))
+            # print("iteration : {},\tcost : {},\tchange in cost: {},\tlast state: {}".format(itr, round(new_cost, 4), round(d_cost, 4), x_traj[:, -1]))
             if -d_cost < 1e-6 and itr >= 3:
-                print("Converged at iteration {}, last state: {}".format(itr, x_traj[:, -1]))
+                # print("Converged at iteration {}, last state: {}".format(itr, x_traj[:, -1]))
                 break
             itr += 1
         else:
             back_track *= 0.6
             if abs(back_track) < 1e-6:
-                print("Converged at iteration {}, last state: {}".format(itr, x_new[:, -1]))
+                # print("Converged at iteration {}, last state: {}".format(itr, x_new[:, -1]))
                 return x_traj, u_traj, kts, Kts, back_track
 
             # print("iteration : {}, Cost increased, prev: {}, new: {}, update backtrack term: {}".format(itr, round(prev_cost,4), round(new_cost,4), back_track))
@@ -215,19 +215,15 @@ if __name__ == "__main__":
     A = jacobian(x1, x)
     B = jacobian(x1, F)
 
-    Q_theta = 1 / (np.deg2rad(5)**2)
-    Q_w = 1 / (np.deg2rad(10)**2)
-    Q_p = 1 / (2**2)
-    Q_v = 1 / (0.5**2)
-    R_F = 1 / (1**2)
+    Q_theta = 1 / (np.deg2rad(4)**2)
+    Q_w = 1 / (np.deg2rad(7)**2)
+    Q_p = 1 / (0.3**2)
+    Q_v = 1 / (0.1**2)
+    R_F = 1 / (0.6**2)
     Q = np.diag([Q_theta, Q_w, Q_p, Q_v]) / Q_theta
     R = np.diag([R_F]) / Q_theta
-    Qf = np.diag([Q_theta * 2, Q_w * 5, Q_p, Q_v * 10]) / Q_theta
-
-    # Q = np.diag([10, 0.1, 0.01, 0.1])
-    # R = np.diag([0.04])
-    # # Qf = np.diag([10, 10, 1, 10])
-    # Qf = Q * 2
+    # Qf = np.diag([Q_theta * 2, Q_w * 5, Q_p, Q_v * 10]) / Q_theta
+    Qf = Q
 
     ref = np.zeros((4,1))
 
@@ -261,7 +257,7 @@ if __name__ == "__main__":
         du = back_track * kts[0] + Kts[0] @ x_res[:, ts]
         print("gain k: {}, K: {}, backtrack: {}".format(kts[0], Kts[0], back_track))
         u_ctrl = (u_traj[:,0] + du)[0]
-        u_ctrl = np.clip(u_ctrl, -50, 50)
+        u_ctrl = np.clip(u_ctrl, -30, 30)
         u_res[:,ts] = u_ctrl
         # Forward dynamics
         x_res[:, ts+1] = cart_pole_model(x_res[:,ts].flatten().tolist(), [u_ctrl]).reshape(4)
@@ -278,10 +274,33 @@ if __name__ == "__main__":
             x_traj[:, i] = cart_pole_model(x_traj[:,i-1].flatten().tolist(), [u_traj[0, i-1]]).reshape(4)
         
 
-    fig, ax = plt.subplots(2, 1)
-
-    ax[0].plot(tspan, x_res[0,:], label="theta")
-    ax[1].plot(tspan, u_res[0,:], label="F")
-    ax[0].legend()
-    ax[1].legend()
+    fig, ax = plt.subplots(3, 2)
+    ax[2,1].axis("off")
+    fig.suptitle("Prediction Horizon: {}s".format(pred_horiz))    
+    ax[0, 0].plot(tspan, x_res[0,:], label="theta")
+    ax[0, 0].set_title("theta")
+    ax[0, 0].set_xlabel("time (s)")
+    ax[0, 0].set_ylabel("theta (rad)")
+    ax[1, 0].plot(tspan, x_res[1,:], label="w")
+    ax[1, 0].set_title("w")
+    ax[1, 0].set_xlabel("time (s)")
+    ax[1, 0].set_ylabel("w (rad/s)")
+    ax[0, 1].plot(tspan, x_res[2,:], label="p")
+    ax[0, 1].set_title("p")
+    ax[0, 1].set_xlabel("time (s)")
+    ax[0, 1].set_ylabel("p (m)")
+    ax[1, 1].plot(tspan, x_res[3,:], label="v")
+    ax[1, 1].set_title("v")
+    ax[1, 1].set_xlabel("time (s)")
+    ax[1, 1].set_ylabel("v (m/s)")
+    ax[2, 0].plot(tspan, u_res[0,:], label="F")
+    ax[2, 0].set_title("F")
+    ax[2, 0].set_xlabel("time (s)")
+    ax[2, 0].set_ylabel("F (N)")
+    ax[0, 0].legend()
+    ax[1, 0].legend()
+    ax[0, 1].legend()
+    ax[1, 1].legend()
+    ax[2, 0].legend()
+    
     plt.show()
