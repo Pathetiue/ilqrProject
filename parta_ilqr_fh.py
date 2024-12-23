@@ -243,7 +243,7 @@ if __name__ == "__main__":
         # u[0, i] = np.random.normal(0, 1)
         x_traj[:, i] = cart_pole_model(x_traj[:,i-1].flatten().tolist(), [u_traj[0, i-1]]).reshape(4)
 
-    sim_time = 20
+    sim_time = 15
     n_sim_step = int((sim_time / h) + 1)
     tspan = np.linspace(0, sim_time, n_sim_step)
 
@@ -278,23 +278,15 @@ if __name__ == "__main__":
     ax[2,1].axis("off")
     fig.suptitle("Prediction Horizon: {}s".format(pred_horiz))    
     ax[0, 0].plot(tspan, x_res[0,:], label="theta")
-    ax[0, 0].set_title("theta")
-    ax[0, 0].set_xlabel("time (s)")
     ax[0, 0].set_ylabel("theta (rad)")
     ax[1, 0].plot(tspan, x_res[1,:], label="w")
-    ax[1, 0].set_title("w")
-    ax[1, 0].set_xlabel("time (s)")
     ax[1, 0].set_ylabel("w (rad/s)")
     ax[0, 1].plot(tspan, x_res[2,:], label="p")
-    ax[0, 1].set_title("p")
-    ax[0, 1].set_xlabel("time (s)")
     ax[0, 1].set_ylabel("p (m)")
     ax[1, 1].plot(tspan, x_res[3,:], label="v")
-    ax[1, 1].set_title("v")
     ax[1, 1].set_xlabel("time (s)")
     ax[1, 1].set_ylabel("v (m/s)")
     ax[2, 0].plot(tspan, u_res[0,:], label="F")
-    ax[2, 0].set_title("F")
     ax[2, 0].set_xlabel("time (s)")
     ax[2, 0].set_ylabel("F (N)")
     ax[0, 0].legend()
