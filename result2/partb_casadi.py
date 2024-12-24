@@ -17,8 +17,8 @@ class Config:
         self.T = 5
         self.mpc_horizon = 200
         self.u_max = 15
-        self.OnlyProcessData = False
-        self.RunControl = True
+        self.OnlyProcessData = True
+        self.RunControl = False
 
 class Visualizer:
     def __init__(self, states, conf):
@@ -118,24 +118,28 @@ class CartPole:
         next_x = cs.reshape(next_x, -1, 1)
 
 
-        # x_dot = states[:, self.index_x_dot]
-        # theta = states[:, self.index_theta]
-        # theta_dot = states[:, self.index_theta_dot]
-        # kinetic_energy = 0.5 * (self.conf.m_cart + self.conf.m_pole) * x_dot ** 2
-        # kinetic_energy += self.conf.m_pole * x_dot * theta_dot * self.conf.l * cs.cos(theta - np.pi)
-        # kinetic_energy += 0.5 * (self.conf.m_pole * self.conf.l ** 2) * theta_dot ** 2
-        # potential_energy = -self.conf.m_pole * self.conf.g * self.conf.l * cs.cos(theta - np.pi)
-        # objective = cs.sum1(kinetic_energy - potential_energy)
-        cost = 0
-        ref = np.array([0,0,0,0])
+        x_dot = states[:, self.index_x_dot]
+        theta = states[:, self.index_theta]
+        theta_dot = states[:, self.index_theta_dot]
+        kinetic_energy = 0.5 * (self.conf.m_cart + self.conf.m_pole) * x_dot ** 2
+        kinetic_energy += self.conf.m_pole * x_dot * theta_dot * self.conf.l * cs.cos(theta - np.pi)
+        kinetic_energy += 0.5 * (self.conf.m_pole * self.conf.l ** 2) * theta_dot ** 2
+        potential_energy = -self.conf.m_pole * self.conf.g * self.conf.l * cs.cos(theta - np.pi)
+        cost = cs.sum1(kinetic_energy - potential_energy)
         for i in range(self.conf.mpc_horizon-1):
-            cost += states[i, self.index_x_dot] * states[i, self.index_x_dot] * 0.5
-            cost += states[i, self.index_theta] * states[i, self.index_theta] * 5
-            cost += states[i, self.index_theta_dot] * states[i, self.index_theta_dot] * 0.5
             cost += controls[i, 0] * controls[i, 0] * 0.05
-        cost += states[self.conf.mpc_horizon-1, self.index_x_dot] * states[self.conf.mpc_horizon-1, self.index_x_dot] * 0.5
-        cost += states[self.conf.mpc_horizon-1, self.index_theta] * states[self.conf.mpc_horizon-1, self.index_theta] * 5
-        cost += states[self.conf.mpc_horizon-1, self.index_theta_dot] * states[self.conf.mpc_horizon-1, self.index_theta_dot] * 0.5
+        
+        # cost = 0
+        # ref = np.array([0,0,0,0])
+        # for i in range(self.conf.mpc_horizon-1):
+        #     cost += states[i, self.index_x_dot] * states[i, self.index_x_dot] * 0.5
+        #     cost += states[i, self.index_theta] * states[i, self.index_theta] * 5
+        #     cost += states[i, self.index_theta_dot] * states[i, self.index_theta_dot] * 0.5
+        #     cost += controls[i, 0] * controls[i, 0] * 0.05
+        # cost += states[self.conf.mpc_horizon-1, self.index_x_dot] * states[self.conf.mpc_horizon-1, self.index_x_dot] * 0.5
+        # cost += states[self.conf.mpc_horizon-1, self.index_theta] * states[self.conf.mpc_horizon-1, self.index_theta] * 5
+        # cost += states[self.conf.mpc_horizon-1, self.index_theta_dot] * states[self.conf.mpc_horizon-1, self.index_theta_dot] * 0.5
+
         opts = {'ipopt.print_level': 0, 'print_time': False}
         solver = cs.nlpsol('solver', 'ipopt', {'x': vars, 'f': cost, 'g': next_x}, opts)
 

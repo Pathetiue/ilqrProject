@@ -17,13 +17,13 @@ class Config:
         self.T = 5
         self.mpc_horizon = 200
         self.u_max = 15
-        self.OnlyProcessData = False
-        self.RunControl = True
+        self.OnlyProcessData = True
+        self.RunControl = False
 
 class Visualizer:
     def __init__(self, states, conf):
         self.fig, self.ax = plt.subplots()
-        self.ax.set_xlim(-10, 10)
+        self.ax.set_xlim(-6, 1)
         self.ax.set_ylim(-1.5, 1.5)
         self.ax.set_aspect('equal')
         self.ax.set_xlabel('p')
