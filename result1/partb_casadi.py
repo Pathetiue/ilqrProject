@@ -176,8 +176,8 @@ if conf.OnlyProcessData:
     controls_data = np.load("actions.npy")
 
 
-vis = Visualizer(states_data, conf)
-vis.generate_animation()
+# vis = Visualizer(states_data, conf)
+# vis.generate_animation()
 
 fig, axs = plt.subplots(4)
 axs[0].plot(states_data[:, 0], 'k')
@@ -189,6 +189,7 @@ axs[2].set_ylabel('p')
 axs[3].plot(states_data[:, 3], 'k')
 axs[3].set_ylabel('p_dot')
 axs[3].set_xlabel('t')
+fig.tight_layout() 
 # fig.legend()
 plt.savefig("./states.png")
 plt.show()
